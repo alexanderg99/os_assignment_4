@@ -49,7 +49,9 @@ void print_hierarchy(FILE *archive, int depth) {
         for (int j = 0; j < depth; j++) {
             printf("  ");
         }
-
+        //print the meta data path in human readable format
+        
+        printf("%s\n", metadata.path);
         printf("%s\n", metadata.name);
 
         if (metadata.type == DT_DIR) {
@@ -80,10 +82,12 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
         perror("opendir");
         return;
     }
+    printf("dir_path: %s\n", dir_path);
 
     struct dirent *entry;
     // Iterate over directory entries
     while ((entry = readdir(dir))) {
+
         // Skip "." and ".." entries
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -92,6 +96,7 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
         // Create the full path for the current entry
         char entry_path[MAX_PATH_LEN];
         snprintf(entry_path, sizeof(entry_path), "%s/%s", dir_path, entry->d_name);
+        printf("entry_path: %s\n", entry_path);
 
         // Get the entry's metadata (e.g., file type, owner, group, rights)
         struct stat st;
@@ -99,6 +104,13 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
             perror("stat");
             continue;
         }
+        //print the entry's metadata
+        printf("st_uid: %d\n", st.st_uid);
+        printf("st_gid: %d\n", st.st_gid);
+        printf("st_mode: %d\n", st.st_mode);
+        printf("st_size: %d\n", st.st_size);
+        //print the name of the file
+        printf("entry->d_name: %s\n", entry->d_name);
 
         // Populate the metadata structure
         Metadata metadata;
@@ -112,6 +124,8 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
 
         // If the entry is a directory, process it recursively
         if (entry->d_type == DT_DIR) {
+            //print that it is a directory
+            printf("DT_DIR\n");
             store_directory(archive, entry_path, metadata_offset, data_offset);
         } else if (entry->d_type == DT_REG) {
             // If the entry is a regular file, store its contents in the archive
@@ -132,6 +146,9 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
                 *data_offset += bytes_read;
             }
             fclose(input_file);
+            //print the file's content
+            printf("file content: %s\n", buffer);
+
         } else {
             // If the entry is not a regular file or a directory, skip it
             continue;
@@ -141,6 +158,9 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
         fseek(archive, *metadata_offset, SEEK_SET);
         fwrite(&metadata, sizeof(Metadata), 1, archive);
         *metadata_offset += sizeof(Metadata);
+        //print that it has been written to the archive
+        printf("metadata has been written to the archive\n");
+
     }
 
 // Close the directory
