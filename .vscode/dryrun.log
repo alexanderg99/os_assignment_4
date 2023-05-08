@@ -1,0 +1,5 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory `/Users/mortazasahar_2/os_assignment_4'
+gcc -Wall -pthread    adzip.c   -o adzip
+make: Leaving directory `/Users/mortazasahar_2/os_assignment_4'
+ 

@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+//test
 // Define constants and structures
 #define HEADER_SIGNATURE 0xADADADAD
 #define MAX_PATH_LEN 256
