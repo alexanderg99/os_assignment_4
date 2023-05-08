@@ -31,7 +31,28 @@ typedef struct {
     uint32_t content_offset; // Offset to the file content in the archive
 } Metadata;
 
-void print_hierarchy(FILE *archive, int depth) {
+void print_directory(FILE *archive, Metadata *parent_metadata, int depth) {
+    for (int i = 0; i < depth; i++) {
+        printf("  ");
+    }
+    printf("%s\n", parent_metadata->path);
+
+    for (int i = 0; i < parent_metadata->size; i++) {
+        Metadata metadata;
+        fread(&metadata, sizeof(Metadata), 1, archive);
+
+        if (metadata.type == DT_DIR) {
+            print_directory(archive, &metadata, depth + 1);
+        } else {
+            for (int j = 0; j < depth + 1; j++) {
+                printf("  ");
+            }
+            printf("%s\n", metadata.path);
+        }
+    }
+}
+
+void print_hierarchy(FILE *archive) {
     Header header;
     fread(&header, sizeof(Header), 1, archive);
 
@@ -39,24 +60,20 @@ void print_hierarchy(FILE *archive, int depth) {
         fprintf(stderr, "Invalid archive file.\n");
         return;
     }
+    //print the header object
+    printf("header.signature: %d\n", header.signature);
+    printf("header.num_entries: %d\n", header.num_entries);
+    printf("header.metadata_offset: %d\n", header.metadata_offset);
 
     fseek(archive, header.metadata_offset, SEEK_SET);
 
-    for (int i = 0; i < header.num_entries; i++) {
-        Metadata metadata;
-        fread(&metadata, sizeof(Metadata), 1, archive);
+    Metadata root_metadata;
+    fread(&root_metadata, sizeof(Metadata), 1, archive);
 
-        for (int j = 0; j < depth; j++) {
-            printf("  ");
-        }
-        //print the meta data path in human readable format
-        
-        printf("%s\n", metadata.path);
-        printf("%s\n", metadata.name);
-
-        if (metadata.type == DT_DIR) {
-            print_hierarchy(archive, depth + 1);
-        }
+    if (root_metadata.type == DT_DIR) {
+        print_directory(archive, &root_metadata, 0);
+    } else {
+        printf("%s\n", root_metadata.path);
     }
 }
 
@@ -68,7 +85,7 @@ void display_hierarchy(const char *archive_path) {
     }
 
     printf("Archive: %s\n", archive_path);
-    print_hierarchy(archive, 0);
+    print_hierarchy(archive);
 
     fclose(archive);
 }
@@ -137,7 +154,7 @@ void store_directory(FILE *archive, const char *dir_path, int *metadata_offset, 
             }
 
             // Write the file's content to the archive
-            fseek(archive, *data_offset, SEEK_SET);
+            fseek(archive, * , SEEK_SET);
             char buffer[1024];
             size_t bytes_read;
             while ((bytes_read = fread(buffer, 1, sizeof(buffer), input_file)) > 0) {
@@ -220,6 +237,11 @@ int main(int argc, char *argv[]) {
         header.signature = HEADER_SIGNATURE;
         header.num_entries = (metadata_offset - sizeof(Header)) / sizeof(Metadata);
         header.metadata_offset = metadata_offset;
+        //print the header's metadata
+        printf("header.signature: %d\n", header.signature);
+        printf("header.num_entries: %d\n", header.num_entries);
+        printf("header.metadata_offset: %d\n", header.metadata_offset);
+
         fseek(archive, 0, SEEK_SET);
         fwrite(&header, sizeof(Header), 1, archive);
 
