@@ -154,7 +154,7 @@ void traverse_directory(FILE *archive_path, const char *dir_path, const char *ba
     closedir(dir);
 }
 
-void bongo(FILE *archive_path, const char *dir_path, const char *base_path, uint32_t *header_offset, uint32_t *metadata_offset, int* num_entries){
+void calculate_metadata_offset(FILE *archive_path, const char *dir_path, const char *base_path, uint32_t *header_offset, uint32_t *metadata_offset, int* num_entries){
     DIR *dir = opendir(dir_path);
     if (dir == NULL) {
         perror("Error opening directory");
@@ -170,7 +170,7 @@ void bongo(FILE *archive_path, const char *dir_path, const char *base_path, uint
 
             char subdir_path[1024];
             snprintf(subdir_path, sizeof(subdir_path), "%s/%s", dir_path, entry->d_name);
-            bongo(archive_path, subdir_path, base_path, header_offset, metadata_offset, num_entries);
+            calculate_metadata_offset(archive_path, subdir_path, base_path, header_offset, metadata_offset, num_entries);
         } else if (entry->d_type == DT_REG) {
 
             char file_path[1024];
@@ -201,22 +201,6 @@ void bongo(FILE *archive_path, const char *dir_path, const char *base_path, uint
 
 void create_archive(const char *archive_path, const char *dir_path, int* num_entries) {
 
-    // Create a header
-    // Write the header to the archive
-    // Recursively traverse the input directory
-    // For each file or directory in the input directory:
-    //     Create a metadata entry
-    //     Write the metadata entry to the archive
-    //     If the entry is a regular file:
-    //         Write the file content to the archive
-    //     If the entry is a directory:
-    //         Recursively traverse the directory
-    //         For each file or directory in the directory:
-    //             Create a metadata entry
-    //             Write the metadata entry to the archive
-    //             If the entry is a regular file:
-    //                 Write the file content to the archive
-    // Close the archive
 
     // Create a header
     Header header;
@@ -225,28 +209,34 @@ void create_archive(const char *archive_path, const char *dir_path, int* num_ent
     header.metadata_offset = sizeof(Header);
 
     //Write the header to the archive
+
     FILE *archive_file = fopen(archive_path, "wb");
     if (archive_file == NULL) {
         perror("Error opening archive file");
         exit(EXIT_FAILURE);
     }
 
-    //write the header to the archive
-    if (fwrite(&header, sizeof(Header), 1, archive_file) != 1) {
-        perror("Error writing to archive");
-        exit(EXIT_FAILURE);
-    }
+
 
     //calculate offset of header
     uint32_t metadata_offset = sizeof(Header);
     uint32_t header_offset = sizeof(Header);
 
-    bongo(archive_file, dir_path, dir_path, &header_offset, &metadata_offset, num_entries);
-
+    calculate_metadata_offset(archive_file, dir_path, dir_path, &header_offset, &metadata_offset, num_entries);
+    header.metadata_offset = metadata_offset;
 
 
     //traverse the directory specified by input path, and append all file contents to the archive recursively
     traverse_directory(archive_file, dir_path, dir_path, &header_offset, &metadata_offset, num_entries);
+
+    header.num_entries = *num_entries;
+
+    //write the header to the archive
+    fseek(archive_file, 0, SEEK_SET);
+    if (fwrite(&header, sizeof(Header), 1, archive_file) != 1) {
+        perror("Error writing to archive");
+        exit(EXIT_FAILURE);
+    }
 
     // Close the archive
     if (fclose(archive_file) == EOF) {
@@ -255,10 +245,45 @@ void create_archive(const char *archive_path, const char *dir_path, int* num_ent
     }
 
 
+}
 
+//implement print_hierarchies function
+void print_hierarchies(const char *archive_path){
+    //open the archive
+    FILE *archive_file = fopen(archive_path, "rb");
+    if (archive_file == NULL) {
+        perror("Error opening archive file");
+        exit(EXIT_FAILURE);
+    }
 
+    //go to the header and retrieve the metadata offset
+    Header header;
+    if (fread(&header, sizeof(Header), 1, archive_file) != 1) {
+        perror("Error reading archive header");
+        exit(EXIT_FAILURE);
+    }
+    uint32_t metadata_offset = header.metadata_offset;
+    uint32_t num_entries = header.num_entries;
+
+    //find out the size of each piece of metadata
+    uint32_t metadata_size = sizeof(Metadata);
+
+    //go to the metadata offset
+    fseek(archive_file, metadata_offset, SEEK_SET);
+
+    //read the path of each metadata file
+    for (int i = 0; i < num_entries; i++){
+        Metadata metadata;
+        if (fread(&metadata, metadata_size, 1, archive_file) != 1) {
+            perror("Error reading archive metadata");
+            exit(EXIT_FAILURE);
+        }
+        printf("%s\n", metadata.path);
+    }
 
 }
+
+
 int main(int argc, char *argv[]) {
     if (argc < 4) {
         fprintf(stderr, "Usage: %s {-c|-p} <archive_path> <input_path>\n", argv[0]);
@@ -280,6 +305,7 @@ int main(int argc, char *argv[]) {
 
         //return 0;
     } else if (strcmp(flag, "-p") == 0) {
+        print_hierarchies(archive_path);
         //return 0;
     } else {
         fprintf(stderr, "Unknown flag: %s\n", flag);
@@ -319,7 +345,19 @@ int main(int argc, char *argv[]) {
     printf("buffer: %s\n", buffer);
     free(buffer);
 
+    //print the metadata at position 592
+    fseek(archive_file, 592, SEEK_SET);
+    Metadata metadata;
+    if (fread(&metadata, sizeof(Metadata), 1, archive_file) != 1) {
+        perror("Error reading archive");
+        exit(EXIT_FAILURE);
+    }
 
+
+    //print metadata name, type and path
+    printf("metadata name: %s\n", metadata.name);
+    printf("metadata type: %u\n", metadata.type);
+    printf("metadata path: %s\n", metadata.path);
 
 
     return 0;
