@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <libgen.h>
+#include <errno.h>
 
 //create header structure
 #define HEADER_SIGNATURE 0xADADADAD
@@ -283,6 +284,124 @@ void print_hierarchies(const char *archive_path){
 
 }
 
+//implement extract_hierarchy function
+//this function recreates the directory structure of the archive
+
+void create_directories_and_files(const char *path) {
+    char temp_path[256];
+    char *pointer;
+    int fd;
+
+    snprintf(temp_path, sizeof(temp_path), "%s", path);
+    for (pointer = temp_path + 1; *pointer; pointer++) {
+        if (*pointer == '/') {
+            *pointer = '\0';
+            mkdir(temp_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+            *pointer = '/';
+        }
+    }
+    fd = open(temp_path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd != -1) {
+        close(fd);
+    } else {
+        perror("Error creating file");
+    }
+}
+
+
+void extract_hierarchy(const char *archive_path, const char *new_path){
+
+    //open the archive
+    FILE *archive_file = fopen(archive_path, "rb");
+    if (archive_file == NULL) {
+            perror("Error opening archive file");
+            exit(EXIT_FAILURE);
+        }
+
+    //go to the header and retrieve the metadata offset
+    Header header;
+    if (fread(&header, sizeof(Header), 1, archive_file) != 1) {
+        perror("Error reading archive header");
+        exit(EXIT_FAILURE);
+    }
+    uint32_t metadata_offset = header.metadata_offset;
+    uint32_t num_entries = header.num_entries;
+
+    //find out the size of each piece of metadata
+    uint32_t metadata_size = sizeof(Metadata);
+
+
+
+
+    //create a new directory
+    mkdir(new_path, 0777);
+
+
+    //read the path of each metadata file
+    for (int i = 0; i < num_entries; i++){
+        //go to the metadata offset
+        fseek(archive_file, metadata_offset + i * metadata_size, SEEK_SET);
+        Metadata metadata;
+        if (fread(&metadata, metadata_size, 1, archive_file) != 1) {
+            perror("Error reading archive metadata");
+            exit(EXIT_FAILURE);
+        }
+        //save path into a new variable
+        //concatenate string "new_path/" with the path of the metadata file
+
+        const char *prefix = "new_path/";
+
+        char full_path[256];
+        snprintf(full_path, sizeof(full_path), "%s%s", prefix, metadata.path);
+        printf("full path: %s\n", full_path);
+
+
+        create_directories_and_files(full_path);
+
+        // Open the file at the path
+        FILE *file = fopen(full_path, "wb");
+        if (file == NULL) {
+            perror("Error opening file");
+            exit(EXIT_FAILURE);
+        }
+
+        //go to the offset of the file
+        fseek(archive_file, metadata.content_offset, SEEK_SET);
+
+        //read the file contents
+        char buffer[metadata.size];
+        if (fread(buffer, metadata.size, 1, archive_file) != 1) {
+            perror("Error reading archive file contents");
+            exit(EXIT_FAILURE);
+        }
+
+        //print the file contents to terminal
+        printf("%s\n", buffer);
+
+        //write it into the file
+        if (fwrite(buffer, metadata.size, 1, file) != 1) {
+            perror("Error writing to file");
+            exit(EXIT_FAILURE);
+        }
+
+
+
+
+        // Close the file
+        if (fclose(file) == EOF) {
+            perror("Error closing file");
+            exit(EXIT_FAILURE);
+        }
+
+
+
+
+    }
+
+
+
+}
+
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
@@ -290,10 +409,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+
+
     const char *flag = argv[1];
     const char *archive_path = argv[2];
     const char *input_path = argv[3];
     int num_entries = 0;
+
 
     if (strcmp(flag, "-c") == 0) {
 
@@ -307,7 +429,14 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(flag, "-p") == 0) {
         print_hierarchies(archive_path);
         //return 0;
-    } else {
+    }
+    else if (strcmp(flag, "-x") == 0) {
+
+        extract_hierarchy(archive_path, input_path);
+        //return 0;
+    }
+
+    else {
         fprintf(stderr, "Unknown flag: %s\n", flag);
         return 1;
 
