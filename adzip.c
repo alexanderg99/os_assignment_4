@@ -156,6 +156,8 @@ void traverse_directory(FILE *archive_path, const char *dir_path, const char *ba
 }
 
 void calculate_metadata_offset(FILE *archive_path, const char *dir_path, const char *base_path, uint32_t *header_offset, uint32_t *metadata_offset, int* num_entries){
+    //almost the same as traverse directory above, just that it doesn't write to the archive and just increments metadata offset
+
     DIR *dir = opendir(dir_path);
     if (dir == NULL) {
         perror("Error opening directory");
@@ -203,26 +205,24 @@ void calculate_metadata_offset(FILE *archive_path, const char *dir_path, const c
 void create_archive(const char *archive_path, const char *dir_path, int* num_entries) {
 
 
-    // Create a header
+    // Initialize a header struct
     Header header;
     header.signature = HEADER_SIGNATURE;
     header.num_entries = 0;
     header.metadata_offset = sizeof(Header);
 
-    //Write the header to the archive
-
+    //Create an Archive File
     FILE *archive_file = fopen(archive_path, "wb");
     if (archive_file == NULL) {
         perror("Error opening archive file");
         exit(EXIT_FAILURE);
     }
 
-
-
     //calculate offset of header
     uint32_t metadata_offset = sizeof(Header);
     uint32_t header_offset = sizeof(Header);
 
+    //calculate the size of all files + header. it becomes the offset of the first metadata
     calculate_metadata_offset(archive_file, dir_path, dir_path, &header_offset, &metadata_offset, num_entries);
     header.metadata_offset = metadata_offset;
 
@@ -330,32 +330,24 @@ void extract_hierarchy(const char *archive_path, const char *new_path){
     //find out the size of each piece of metadata
     uint32_t metadata_size = sizeof(Metadata);
 
-
-
-
-    //create a new directory
-    mkdir(new_path, 0777);
-
-
     //read the path of each metadata file
     for (int i = 0; i < num_entries; i++){
-        //go to the metadata offset
+        //go to the metadata for the file
         fseek(archive_file, metadata_offset + i * metadata_size, SEEK_SET);
         Metadata metadata;
         if (fread(&metadata, metadata_size, 1, archive_file) != 1) {
             perror("Error reading archive metadata");
             exit(EXIT_FAILURE);
         }
-        //save path into a new variable
+
         //concatenate string "new_path/" with the path of the metadata file
 
-        const char *prefix = "new_path/";
-
+        const char *prefix = new_path;
         char full_path[256];
         snprintf(full_path, sizeof(full_path), "%s%s", prefix, metadata.path);
         printf("full path: %s\n", full_path);
 
-
+        //create the directory and an empty file at the path
         create_directories_and_files(full_path);
 
         // Open the file at the path
@@ -365,10 +357,10 @@ void extract_hierarchy(const char *archive_path, const char *new_path){
             exit(EXIT_FAILURE);
         }
 
-        //go to the offset of the file
+        //go to the offset of the file contents in the archive
         fseek(archive_file, metadata.content_offset, SEEK_SET);
 
-        //read the file contents
+        //read the file contents from the archive
         char buffer[metadata.size];
         if (fread(buffer, metadata.size, 1, archive_file) != 1) {
             perror("Error reading archive file contents");
@@ -376,7 +368,7 @@ void extract_hierarchy(const char *archive_path, const char *new_path){
         }
 
         //print the file contents to terminal
-        printf("%s\n", buffer);
+        //printf("%s\n", buffer);
 
         //write it into the file
         if (fwrite(buffer, metadata.size, 1, file) != 1) {
@@ -384,21 +376,12 @@ void extract_hierarchy(const char *archive_path, const char *new_path){
             exit(EXIT_FAILURE);
         }
 
-
-
-
         // Close the file
         if (fclose(file) == EOF) {
             perror("Error closing file");
             exit(EXIT_FAILURE);
         }
-
-
-
-
     }
-
-
 
 }
 
@@ -408,42 +391,34 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: %s {-c|-p} <archive_path> <input_path>\n", argv[0]);
         return 1;
     }
-
-
-
     const char *flag = argv[1];
     const char *archive_path = argv[2];
     const char *input_path = argv[3];
     int num_entries = 0;
 
-
     if (strcmp(flag, "-c") == 0) {
-
-
-
         create_archive(archive_path, input_path, &num_entries);
 
-
-
-        //return 0;
     } else if (strcmp(flag, "-p") == 0) {
         print_hierarchies(archive_path);
-        //return 0;
     }
     else if (strcmp(flag, "-x") == 0) {
-
         extract_hierarchy(archive_path, input_path);
-        //return 0;
     }
 
     else {
         fprintf(stderr, "Unknown flag: %s\n", flag);
         return 1;
-
-
     }
 
-    //read archive and print out the contents
+//./adzip -c test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
+//./adzip -p test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
+//./adzip -x test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/dog/
+
+
+/* ------------ Tests ------------
+ *
+ *   //read archive and print out the contents
     FILE *archive_file = fopen(archive_path, "rb");
     if (archive_file == NULL) {
         perror("Error opening archive file");
@@ -455,7 +430,6 @@ int main(int argc, char *argv[]) {
         perror("Error reading archive");
         exit(EXIT_FAILURE);
     }
-
 
     printf("header signature: %u\n", header.signature);
     printf("header num_entries: %u\n", header.num_entries);
@@ -487,7 +461,7 @@ int main(int argc, char *argv[]) {
     printf("metadata name: %s\n", metadata.name);
     printf("metadata type: %u\n", metadata.type);
     printf("metadata path: %s\n", metadata.path);
-
+*/
 
     return 0;
 
