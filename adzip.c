@@ -33,12 +33,16 @@ typedef struct {
 } Metadata;
 
 void write_file_to_archive(FILE *archive, const char *file_path, uint32_t *header_offset, uint32_t *metadata_offset, int* num_entries) {
+
+
     // Open the file
     int fd = open(file_path, O_RDONLY);
+
     if (fd == -1) {
         perror("Error opening file");
         exit(EXIT_FAILURE);
     }
+
 
     // Get the file size
     struct stat st;
@@ -48,12 +52,15 @@ void write_file_to_archive(FILE *archive, const char *file_path, uint32_t *heade
     }
     uint32_t file_size = st.st_size;
 
+
     //Get the metadata of the file with stat
     struct stat file_stat;
     if (stat(file_path, &file_stat) == -1) {
         perror("Error getting file metadata");
         exit(EXIT_FAILURE);
     }
+
+
 
     //Initialize a metadata struct and populate it with the relevant details
     Metadata metadata;
@@ -68,10 +75,10 @@ void write_file_to_archive(FILE *archive, const char *file_path, uint32_t *heade
     //metadata.content_offset = 0;
 
     //print the metadata content offset and the metadata name
-    printf("Writing Content at Position: %d\n", metadata.content_offset);
+    //printf("Writing Content at Position: %d\n", metadata.content_offset);
     //print the metadata name
-    printf("metadata name: %s\n", metadata.name);
-    printf("Writing Metadata at Position: %d\n", *metadata_offset);
+    //printf("metadata name: %s\n", metadata.name);
+    //printf("Writing Metadata at Position: %d\n", *metadata_offset);
 
 
 
@@ -104,13 +111,9 @@ void write_file_to_archive(FILE *archive, const char *file_path, uint32_t *heade
         exit(EXIT_FAILURE);
     }
 
-
     // Update the offset
     *header_offset += file_size;
     *metadata_offset += sizeof(Metadata);
-
-    //update num entries
-    //*num_entries += 1;
 
     // Close the file
     if (close(fd) == -1) {
@@ -121,12 +124,14 @@ void write_file_to_archive(FILE *archive, const char *file_path, uint32_t *heade
 
 void traverse_directory(FILE *archive_path, const char *dir_path, const char *base_path, uint32_t *header_offset, uint32_t *metadata_offset, int* num_entries) {
 
-    //printf("dictionary travelled\n");
+
     DIR *dir = opendir(dir_path);
     if (dir == NULL) {
         perror("Error opening directory");
         exit(EXIT_FAILURE);
     }
+
+
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
@@ -144,6 +149,7 @@ void traverse_directory(FILE *archive_path, const char *dir_path, const char *ba
             snprintf(file_path, sizeof(file_path), "%s/%s", dir_path, entry->d_name);
             const char *relative_path = file_path + strlen(base_path) - 4;
             write_file_to_archive(archive_path, relative_path, header_offset, metadata_offset, num_entries);
+
             printf("file written to archive: %s\n", relative_path);
             //(*file_count)++;
         }
@@ -191,7 +197,7 @@ void calculate_metadata_offset(FILE *archive_path, const char *dir_path, const c
 
 
             //print metadata offset
-            printf("metadata offset: %d\n", *metadata_offset);
+            //printf("metadata offset: %d\n", *metadata_offset);
             //(*file_count)++;
         }
     }
@@ -263,6 +269,9 @@ void print_hierarchies(const char *archive_path){
     }
     uint32_t metadata_offset = header.metadata_offset;
     uint32_t num_entries = header.num_entries;
+
+
+
 
     //find out the size of each piece of metadata
     uint32_t metadata_size = sizeof(Metadata);
@@ -445,7 +454,7 @@ void print_metadata(const char *archive_path){
 void append_to_archive(const char *archive_path, const char *dir_path){
 
     //read header
-    FILE *archive_file = fopen(archive_path, "rb");
+    FILE *archive_file = fopen(archive_path, "rb+");
     if (archive_file == NULL) {
         perror("Error opening archive file");
         exit(EXIT_FAILURE);
@@ -467,31 +476,51 @@ void append_to_archive(const char *archive_path, const char *dir_path){
 
     uint32_t old_offset = header.metadata_offset;
 
+    //go to the old_offset and shift all metadata back by new_metadata_offset
+
+    for (int i = header.num_entries - 1; i > -1; i--) {
+
+        //go to the last metadata struct in the archive
+        fseek(archive_file, old_offset + i * sizeof(Metadata), SEEK_SET);
+        Metadata metadata;
+        if (fread(&metadata, sizeof(Metadata), 1, archive_file) != 1) {
+            perror("Error reading archive metadata");
+            exit(EXIT_FAILURE);
+        }
+
+
+        fseek(archive_file, new_metadata_offset + i * sizeof(Metadata) + old_offset, SEEK_SET);
+        //write the metadata struct
+        if (fwrite(&metadata, sizeof(Metadata), 1, archive_file) != 1) {
+            perror("Error writing to archive file");
+            exit(EXIT_FAILURE);
+        }
+    }
 
 
 
 
-
-    //add the new metadata offset to the header
+        //add the new metadata offset to the header
     header.metadata_offset += new_metadata_offset;
+    u_int32_t start = header.metadata_offset + header.num_entries * sizeof(Metadata);
     header.num_entries += new_num_entries;
-
-    printf("new metadata offset: %u\n", header.metadata_offset);
-    printf("new header offset: %u\n", new_header_offset);
-    printf("new num entries: %d\n", header.num_entries);
+    new_num_entries = header.num_entries;
+    traverse_directory(archive_file, dir_path, dir_path, &old_offset, &start, &new_num_entries);
 
 
+    //write the new header
+    fseek(archive_file, 0, SEEK_SET);
+    if (fwrite(&header, sizeof(Header), 1, archive_file) != 1) {
+        perror("Error writing to archive file");
+        exit(EXIT_FAILURE);
+    }
 
+    //close the archive
+    fclose(archive_file);
 
-
-
-
-
-
-
-
-
-
+    //printf("new metadata offset: %u\n", header.metadata_offset);
+    //printf("new header offset: %u\n", new_header_offset);
+    //printf("new num entries: %d\n", header.num_entries);
 
 
 
@@ -535,13 +564,12 @@ int main(int argc, char *argv[]) {
 //./adzip -p test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
 //./adzip -m test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
 //./adzip -x test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/dog/
-//./adzip -a test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test2
+//./adzip -a test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/toad
 
 
+/* tests
 
-/* ------------ Tests ------------
- *
- *   //read archive and print out the contents
+    //read archive and print out the contents
     FILE *archive_file = fopen(archive_path, "rb");
     if (archive_file == NULL) {
         perror("Error opening archive file");
@@ -590,7 +618,3 @@ int main(int argc, char *argv[]) {
 
 }
 
-
-
-//traversal is correct.
-//
