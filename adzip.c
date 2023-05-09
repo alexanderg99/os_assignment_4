@@ -110,7 +110,7 @@ void write_file_to_archive(FILE *archive, const char *file_path, uint32_t *heade
     *metadata_offset += sizeof(Metadata);
 
     //update num entries
-    *num_entries += 1;
+    //*num_entries += 1;
 
     // Close the file
     if (close(fd) == -1) {
@@ -144,9 +144,6 @@ void traverse_directory(FILE *archive_path, const char *dir_path, const char *ba
             snprintf(file_path, sizeof(file_path), "%s/%s", dir_path, entry->d_name);
             const char *relative_path = file_path + strlen(base_path) - 4;
             write_file_to_archive(archive_path, relative_path, header_offset, metadata_offset, num_entries);
-
-
-
             printf("file written to archive: %s\n", relative_path);
             //(*file_count)++;
         }
@@ -190,6 +187,7 @@ void calculate_metadata_offset(FILE *archive_path, const char *dir_path, const c
 
             //increment metadata offset by file size
             *metadata_offset += file_size;
+            *num_entries += 1;
 
 
             //print metadata offset
@@ -385,6 +383,120 @@ void extract_hierarchy(const char *archive_path, const char *new_path){
 
 }
 
+void print_permissions(mode_t mode) {
+    char permissions[11];
+
+    permissions[0] = (S_ISDIR(mode)) ? 'd' : '-';
+    permissions[1] = (mode & S_IRUSR) ? 'r' : '-';
+    permissions[2] = (mode & S_IWUSR) ? 'w' : '-';
+    permissions[3] = (mode & S_IXUSR) ? 'x' : '-';
+    permissions[4] = (mode & S_IRGRP) ? 'r' : '-';
+    permissions[5] = (mode & S_IWGRP) ? 'w' : '-';
+    permissions[6] = (mode & S_IXGRP) ? 'x' : '-';
+    permissions[7] = (mode & S_IROTH) ? 'r' : '-';
+    permissions[8] = (mode & S_IWOTH) ? 'w' : '-';
+    permissions[9] = (mode & S_IXOTH) ? 'x' : '-';
+    permissions[10] = '\0';
+
+    printf("%s\n", permissions);
+}
+
+
+void print_metadata(const char *archive_path){
+
+    FILE *archive_file = fopen(archive_path, "rb");
+    if (archive_file == NULL) {
+        perror("Error opening archive file");
+        exit(EXIT_FAILURE);
+    }
+
+    //go to the header and retrieve the metadata offset
+    Header header;
+    if (fread(&header, sizeof(Header), 1, archive_file) != 1) {
+        perror("Error reading archive header");
+        exit(EXIT_FAILURE);
+    }
+    uint32_t metadata_offset = header.metadata_offset;
+    uint32_t num_entries = header.num_entries;
+
+    //find out the size of each piece of metadata
+    uint32_t metadata_size = sizeof(Metadata);
+
+    //go to the metadata offset
+    fseek(archive_file, metadata_offset, SEEK_SET);
+
+    //read the path of each metadata file
+    for (int i = 0; i < num_entries; i++){
+        Metadata metadata;
+        if (fread(&metadata, metadata_size, 1, archive_file) != 1) {
+            perror("Error reading archive metadata");
+            exit(EXIT_FAILURE);
+        }
+        //print these: uid_t owner;             // Owner user ID
+        //    gid_t group;             // Group ID
+        //    mode_t rights;
+        printf("%u\n", metadata.owner);
+        printf("%u\n", metadata.group);
+        print_permissions(metadata.rights);
+    }
+
+}
+
+void append_to_archive(const char *archive_path, const char *dir_path){
+
+    //read header
+    FILE *archive_file = fopen(archive_path, "rb");
+    if (archive_file == NULL) {
+        perror("Error opening archive file");
+        exit(EXIT_FAILURE);
+    }
+
+
+    Header header;
+    if (fread(&header, sizeof(Header), 1, archive_file) != 1) {
+            perror("Error reading archive header");
+            exit(EXIT_FAILURE);
+    }
+
+
+    //calculate the size of all the files in the new directory specified by dir_path with the function void calculate_metadata_offset(FILE *archive_path, const char *dir_path, const char *base_path, uint32_t *header_offset, uint32_t *metadata_offset, int* num_entries)
+    uint32_t new_metadata_offset = 0;
+    uint32_t new_header_offset = 0;
+    int new_num_entries = 0;
+    calculate_metadata_offset(archive_file, dir_path, dir_path, &new_header_offset, &new_metadata_offset, &new_num_entries);
+
+    uint32_t old_offset = header.metadata_offset;
+
+
+
+
+
+
+    //add the new metadata offset to the header
+    header.metadata_offset += new_metadata_offset;
+    header.num_entries += new_num_entries;
+
+    printf("new metadata offset: %u\n", header.metadata_offset);
+    printf("new header offset: %u\n", new_header_offset);
+    printf("new num entries: %d\n", header.num_entries);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
@@ -406,6 +518,14 @@ int main(int argc, char *argv[]) {
         extract_hierarchy(archive_path, input_path);
     }
 
+    else if (strcmp(flag, "-m") == 0) {
+        print_metadata(archive_path);
+    }
+
+    else if (strcmp(flag, "-a") == 0) {
+        append_to_archive(archive_path, input_path);
+    }
+
     else {
         fprintf(stderr, "Unknown flag: %s\n", flag);
         return 1;
@@ -413,7 +533,10 @@ int main(int argc, char *argv[]) {
 
 //./adzip -c test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
 //./adzip -p test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
+//./adzip -m test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test
 //./adzip -x test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/dog/
+//./adzip -a test.ad /Users/alexandergunawan/work/Spring2023/OS/os_assignment_4/test2
+
 
 
 /* ------------ Tests ------------
